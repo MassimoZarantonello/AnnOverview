@@ -153,13 +153,17 @@ tissue already there only if its staining or quality looks clearly different. Si
 
 ## Sprints
 
-1. **The format and the layout.**
-   - AnnoCell: the optional fields and the tree walker in `annocell.folder`; the annotator and the round in the
-     panel; closed ROIs read-only; opening an annotator folder opens the latest open round; saving that survives the
-     network drive dropping (keep the masks in memory, one warning, retry).
-   - macroseg: export with `annotator` into the new layout; closing a round; readers and training on the new layout,
-     one annotator per ROI; training without the validation split, with fixed settings.
-   - AnnOverview: the repository; the tree with status and last save; refresh button.
+1. **The format and the layout**, in the order of who depends on whom (macroseg and AnnOverview both build on
+   `annocell.folder`):
+   1. AnnoCell format (`folder.py` only, nothing changes for the annotators): the layout helpers, the optional
+      fields, closing an ROI, the tree walker, `is_complete`.
+   2. macroseg: export with `annotator` into the new layout; closing a round; readers and training on the new
+      layout, one annotator per ROI; training without the validation split, with fixed settings.
+   3. AnnoCell tool: the annotator and the round in the panel; closed ROIs read-only; opening an annotator folder
+      opens the latest open round; saving that survives the network drive dropping (keep the masks in memory, one
+      warning, retry). Needs only step 1: before or after step 2.
+   4. AnnOverview: the repository; the tree with status and last save; refresh button; tried on folders exported
+      by step 2.
 2. **History**: sessions in AnnoCell; history and "now" in AnnOverview.
 3. **Proposing ROIs** in macroseg, with the rules above.
 4. **Slide map**: thumbnails from macroseg, the map in AnnOverview.
