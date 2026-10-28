@@ -27,7 +27,9 @@ def test_graph_of_a_round_links_slides_rois_and_annotators(tree):
     assert {k for k in nodes if k.startswith("area:")} == {"area:slide", "area:roi", "area:annotator"}
     assert nodes["roi:exp201_c"]["data"]["parent"] == "area:roi"
     assert nodes["annotator:carla"]["data"]["parent"] == "area:annotator"
-    assert details["roi:exp201_c"][2].startswith("alice: complete") and details["roi:exp201_c"][3].startswith("carla")
+    lines = details["roi:exp201_c"]
+    assert lines[2].startswith("alice: complete") and lines[3].startswith("corrections alice: kept 4 (100 %)")
+    assert lines[4].startswith("carla")  # carla has not finished: no corrections line
     closed = graph_elements(rois, 1, datetime.now())[0]
     closed_rois = [e for e in closed if e["data"]["id"].startswith("roi:") and "source" not in e["data"]]
     assert closed_rois and all("closed" in e["classes"] for e in closed_rois)
@@ -42,3 +44,18 @@ def test_pictures_are_drawn_and_cached(tree, tmp_path, monkeypatch):
     uri = thumbnail_uri(folder)
     assert uri.startswith("data:image/png;base64,") and len(list((tmp_path / "cache").iterdir())) == 1
     assert thumbnail_uri(folder) == uri and len(list((tmp_path / "cache").iterdir())) == 1  # from the cache
+
+
+def test_details_of_a_complete_roi_show_its_corrections(tmp_path):
+    from annoverview.tree import COMPLETE, IN_PROGRESS, RoiStatus
+
+    def roi(annotator, name, state, kept=0, edited=0, deleted=0, drawn=0):
+        folder = tmp_path / annotator / name
+        return RoiStatus(folder, annotator, 2, name, state, kept=kept, edited=edited, deleted=deleted, drawn=drawn)
+
+    rois = [roi("alice", "a", COMPLETE, 60, 20, 20, 5), roi("bob", "b", IN_PROGRESS, 50, 0, 0, 0)]
+    _, details = graph_elements(rois, 2, datetime.now())
+    assert details["roi:a"][-1] == (
+        "corrections: kept 60 (60 %), edited 20 (20 %), deleted 20 (20 %), drawn new 5, of 100 proposed"
+    )
+    assert not any(line.startswith("corrections") for line in details["roi:b"])  # not complete yet

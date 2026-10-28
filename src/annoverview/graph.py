@@ -70,9 +70,11 @@ def graph_elements(
         if picture is not None:
             data["image"] = picture(versions[0])
         nodes.append({"data": data, "position": {"x": roi_x[name], "y": roi_y[name]}, "classes": " ".join(classes)})
-        details[node] = [f"ROI {name}", f"slide: {versions[0].source or NO_SLIDE}"] + [
-            _version_line(v, now) for v in sorted(versions, key=lambda v: v.annotator)
-        ]
+        details[node] = [f"ROI {name}", f"slide: {versions[0].source or NO_SLIDE}"]
+        for v in sorted(versions, key=lambda v: v.annotator):
+            details[node].append(_version_line(v, now))
+            if v.into_training:  # complete: what the annotator did to the proposal
+                details[node].append(_corrections_line(v, shared=len(versions) > 1))
 
     for slide, names in _by(order, lambda n: groups[n][0].source or NO_SLIDE).items():
         node = f"slide:{slide}"
@@ -110,6 +112,23 @@ def graph_elements(
         for kind, label in AREAS.items()
     ]
     return areas + nodes + edges, details
+
+
+def _corrections_line(roi: RoiStatus, shared: bool) -> str:
+    """How a complete ROI's proposal was corrected: kept, edited and deleted as counts and % of the proposal's
+    cells, and the cells drawn new."""
+    proposal = roi.kept + roi.edited + roi.deleted
+    if not proposal:
+        return f"{'corrections ' + roi.annotator if shared else 'corrections'}: no proposal to compare with"
+
+    def part(count):
+        return f"{count} ({round(100 * count / proposal)} %)"
+
+    head = f"corrections {roi.annotator}" if shared else "corrections"
+    return (
+        f"{head}: kept {part(roi.kept)}, edited {part(roi.edited)}, deleted {part(roi.deleted)}, "
+        f"drawn new {roi.drawn}, of {proposal} proposed"
+    )
 
 
 def _version_line(roi: RoiStatus, now: datetime, who: bool = True) -> str:
