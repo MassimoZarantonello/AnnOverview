@@ -14,7 +14,8 @@ The shared folder (one folder per annotator, in the AnnoCell layout) mounted on 
 annoverview <shared folder>
 ```
 
-The page opens in the browser (http://localhost:8080); **Refresh** reads the folder again. Three parts: the rounds
+The page opens in the browser (http://localhost:8080) and only this computer can reach it; `--share` lets
+others on the network open it too. **Refresh** reads the folder again. Three parts: the rounds
 (ROIs not started / in progress / complete, how many go into training, closed), the last save of each annotator,
 and the tree of ROIs, by annotator or by round, filterable by slide.
 

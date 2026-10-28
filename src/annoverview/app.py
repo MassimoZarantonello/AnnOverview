@@ -528,13 +528,27 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("root", help="the shared annotation folder (one folder per annotator)")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
+    parser.add_argument(
+        "--share",
+        action="store_true",
+        help="also accept connections from the network (others can then open the page); default: this computer only",
+    )
     args = parser.parse_args(argv)
     root = Path(args.root)
     if not root.is_dir():
         parser.error(f"{root} is not a folder (is the network drive mounted?)")
     from nicegui import ui  # here, so that --help and errors answer without loading the web server
 
-    ui.run(lambda: build_page(root), title="AnnOverview", port=args.port, show=not args.no_browser, reload=False)
+    # Only this computer by default: the page shows annotators' work and unpublished images.
+    host = "0.0.0.0" if args.share else "127.0.0.1"
+    ui.run(
+        lambda: build_page(root),
+        title="AnnOverview",
+        host=host,
+        port=args.port,
+        show=not args.no_browser,
+        reload=False,
+    )
 
 
 if __name__ == "__main__":
