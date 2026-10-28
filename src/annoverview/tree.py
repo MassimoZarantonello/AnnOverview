@@ -30,6 +30,11 @@ class RoiStatus:
     state: str
     closed: bool = False
     cells: int = 0
+    # How the annotator changed the proposal (the review's counts): kept as proposed, edited, drawn new, deleted.
+    kept: int = 0
+    edited: int = 0
+    drawn: int = 0
+    deleted: int = 0
     ok: int = 0
     unreviewed: int = 0
     saved_at: datetime | None = None
@@ -79,6 +84,10 @@ def _status(roi: af.Roi) -> RoiStatus:
         cells=review.get("cells", 0),
         ok=review.get(af.OK, 0),
         unreviewed=review.get(af.UNREVIEWED, 0),
+        kept=review.get(af.PROPOSED, 0),
+        edited=review.get(af.EDITED, 0),
+        drawn=review.get(af.DRAWN, 0),
+        deleted=review.get("deleted", 0),
         saved_at=_moment(review.get("saved_at")),
         started_at=_moment(review.get("started_at")),
         completed_at=_moment(review.get("completed_at")),
@@ -88,6 +97,42 @@ def _status(roi: af.Roi) -> RoiStatus:
 
 def _moment(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def corrections(rois: Sequence[RoiStatus]) -> list[dict]:
+    """Per round, over its complete training ROIs: how much of the proposal the annotators kept, edited and
+    deleted, and how many cells they drew new, as counts and as % of the proposal's cells. If the model improves,
+    the kept share grows from round to round."""
+    rows = []
+    for number in sorted({r.round for r in rois if r.into_training}):
+        done = [r for r in rois if r.round == number and r.into_training]
+        counts = {k: sum(getattr(r, k) for r in done) for k in ("kept", "edited", "deleted", "drawn")}
+        proposal = counts["kept"] + counts["edited"] + counts["deleted"]
+        rows.append(
+            {
+                "round": number,
+                "rois": len(done),
+                "proposal": proposal,
+                **counts,
+                **{f"{k}_%": round(100 * v / proposal, 1) if proposal else None for k, v in counts.items()},
+            }
+        )
+    return rows
+
+
+def model_scores(root: str | Path) -> list[dict]:
+    """Per model scored on the test regions (``annocell.folder.read_scores``): its round and its mean AP over the
+    test regions, at each threshold, by round."""
+    rows = []
+    for score in af.read_scores(root):
+        regions = score.get("regions") or []
+        keys = sorted({k for r in regions for k in r if k.startswith("AP@")})
+        means = {}
+        for key in keys:
+            values = [r[key] for r in regions if r.get(key) is not None]
+            means[key] = round(sum(values) / len(values), 4) if values else None
+        rows.append({"model": score.get("model"), "round": score.get("round", 0), "regions": len(regions), **means})
+    return rows
 
 
 def history(rois: Sequence[RoiStatus]) -> list[RoiStatus]:

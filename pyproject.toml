@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
   "annocell",  # the folder format (AnnoCell, next to this repo): read through it, never written
   "nicegui>=2",
+  "pillow>=13.0.0",
 ]
 
 [project.optional-dependencies]

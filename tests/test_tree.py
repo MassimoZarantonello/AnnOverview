@@ -72,7 +72,7 @@ def test_tree_nodes_by_annotator_and_by_round(tree):
     leaf = alice[0]["children"][1]
     assert leaf["label"].startswith("exp201_b: in progress, 2 of 4 cells checked, started ")
     assert "closed" in leaf["label"]
-    assert leaf["cls"] == "text-amber-700"
+    assert leaf["cls"] == "st-in-progress"
     by_round = tree_nodes(rois, "round", now)
     assert [n["label"].split(":")[0] for n in by_round] == ["round 1", "round 2", "test regions"]
     assert [n["label"].split(":")[0] for n in by_round[1]["children"]] == ["alice", "bob"]
@@ -90,3 +90,43 @@ def test_history_says_when_each_roi_was_started_and_finished(tree):
     assert rows["exp201_a"]["state"] == "complete, closed" and rows["exp201_test"]["round"] == "test"
     assert "finished" in roi_label(by_name["exp201_a"], datetime.now())
     assert "started" in roi_label(by_name["exp201_b"], datetime.now())
+
+
+def test_corrections_per_round_count_complete_rois_only(tmp_path):
+    from annoverview.tree import RoiStatus, corrections
+
+    def roi(round_number, state, kept, edited, deleted, drawn):
+        return RoiStatus(
+            tmp_path, "alice", round_number, f"r{kept}", state, kept=kept, edited=edited, deleted=deleted, drawn=drawn
+        )
+
+    rows = corrections(
+        [
+            roi(1, COMPLETE, 60, 20, 20, 5),
+            roi(1, IN_PROGRESS, 1, 0, 99, 0),
+            roi(2, COMPLETE, 90, 5, 5, 1),
+            roi(None, DRAWN, 0, 0, 0, 30),
+        ]
+    )
+    assert [r["round"] for r in rows] == [1, 2]  # unfinished ROIs and test regions left out
+    assert (rows[0]["kept_%"], rows[0]["edited_%"], rows[0]["deleted_%"], rows[0]["drawn"]) == (60.0, 20.0, 20.0, 5)
+    assert rows[1]["kept_%"] == 90.0 and rows[1]["proposal"] == 100
+
+
+def test_model_scores_average_the_test_regions(tmp_path):
+    from annoverview.tree import model_scores
+
+    af.write_score(tmp_path, {"model": "m1", "round": 1, "regions": [{"AP@0.5": 0.6}, {"AP@0.5": 0.8}]})
+    af.write_score(tmp_path, {"model": "cpsam", "round": 0, "regions": [{"AP@0.5": 0.5, "AP@0.75": None}]})
+    rows = model_scores(tmp_path)
+    assert [(r["model"], r["round"]) for r in rows] == [("cpsam", 0), ("m1", 1)]
+    assert rows[1]["AP@0.5"] == 0.7 and rows[0]["AP@0.75"] is None
+
+
+def test_progress_charts_have_one_bar_or_line_per_round():
+    from annoverview.app import _corrections_chart, _scores_chart
+
+    bars = _corrections_chart([{"round": 1, "kept_%": 60.0, "edited_%": 20.0, "deleted_%": 20.0}])
+    assert [s["name"] for s in bars["series"]] == ["kept", "edited", "deleted"] and bars["xAxis"]["data"] == ["round 1"]
+    lines = _scores_chart([{"round": 0, "AP@0.5": 0.5, "AP@0.75": 0.3}, {"round": 1, "AP@0.5": 0.6, "AP@0.75": None}])
+    assert [s["name"] for s in lines["series"]] == ["AP@0.5", "AP@0.75"] and lines["series"][1]["data"] == [0.3, None]
