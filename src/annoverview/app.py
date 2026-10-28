@@ -1,7 +1,8 @@
 """The page: ``annoverview <root>`` opens it in the browser, read from the shared folder at every Refresh.
 
-Three parts: the rounds (ROIs by state, how many go into training), now (what each annotator saved last), and the
-tree (annotator → round → ROI, or round → annotator → ROI), filterable by slide. Read-only: the page has no
+Four parts: the rounds (ROIs by state, how many go into training), now (what each annotator saved last), the tree
+(annotator → round → ROI, or round → annotator → ROI) and the history (when each ROI was started and finished), all
+filterable by slide. Read-only: the page has no
 control that writes anything.
 """
 
@@ -11,7 +12,17 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from annoverview.tree import COMPLETE, DRAWN, IN_PROGRESS, NOT_STARTED, RoiStatus, ago, latest_saves, read_tree
+from annoverview.tree import (
+    COMPLETE,
+    DRAWN,
+    IN_PROGRESS,
+    NOT_STARTED,
+    RoiStatus,
+    ago,
+    history,
+    latest_saves,
+    read_tree,
+)
 from annoverview.tree import round_summary as summarize
 
 # Tailwind text colour per state (the same meaning as AnnoCell's outlines: yellow to do, green done).
@@ -33,6 +44,10 @@ def roi_label(roi: RoiStatus, now: datetime) -> str:
         parts.append(f"{roi.ok} of {roi.cells} cells checked")
     elif roi.cells:
         parts.append(f"{roi.cells} cells")
+    if roi.completed_at and not roi.is_test:
+        parts.append(f"finished {_day(roi.completed_at)}")
+    elif roi.started_at:
+        parts.append(f"started {_day(roi.started_at)}")
     if roi.saved_at:
         parts.append(f"saved {ago(roi.saved_at, now)}")
     if roi.closed:
@@ -96,6 +111,26 @@ def tree_nodes(rois: list[RoiStatus], by: str, now: datetime) -> list[dict]:
     return nodes
 
 
+def _day(moment: datetime | None) -> str:
+    return "" if moment is None else f"{moment:%d %b %H:%M}"
+
+
+def history_rows(rois: list[RoiStatus]) -> list[dict]:
+    """The history table: one row per ROI started, most recent first."""
+    return [
+        {
+            "id": str(r.folder),
+            "annotator": r.annotator,
+            "round": "test" if r.is_test else r.round,
+            "roi": r.name,
+            "started": _day(r.started_at),
+            "finished": "" if r.is_test else _day(r.completed_at),
+            "state": r.state + (", closed" if r.closed else ""),
+        }
+        for r in history(rois)
+    ]
+
+
 def _cls(roi: RoiStatus) -> str:
     return "text-red-700" if roi.problem else STATE_CLASS[roi.state]
 
@@ -148,6 +183,15 @@ def build_page(root: Path) -> None:
         tree.add_slot("default-header", '<span :class="props.node.cls">{{ props.node.label }}</span>')
         # The first level, and below it what is not closed: the ROIs still being worked on show at once.
         tree.expand([n["id"] for n in nodes] + [c["id"] for n in nodes for c in n["children"] if c["open"]])
+
+        ui.label("History (when each ROI was started and finished)").classes("text-xl font-semibold mt-4")
+        labels = {"annotator": "Annotator", "round": "Round", "roi": "ROI", "started": "Started"}
+        labels |= {"finished": "Finished", "state": "State"}
+        columns = [
+            {"name": key, "label": label, "field": key, "align": "left", "sortable": True}
+            for key, label in labels.items()
+        ]
+        ui.table(columns=columns, rows=history_rows(shown), row_key="id", pagination=20).props("dense flat bordered")
 
     def _set(state, key):
         def change(event):

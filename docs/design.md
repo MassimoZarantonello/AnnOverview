@@ -85,11 +85,14 @@ From `annotation.json` of each ROI. Those not in the AnnoCell format today becom
 A tree walker in `annocell.folder` lists the ROI folders under the root with annotator and round, for AnnoLoop and
 AnnOverview alike.
 
-### Sessions (history)
+### History: started and finished
 
-AnnoCell appends one line per session to `sessions.jsonl` in the ROI folder: when the ROI was opened and left, and
-the active time (time with edits, pauses longer than a few minutes not counted). Sessions, not clicks. The
-annotators are told that this is recorded and why (to measure correction effort per round).
+Decided: **no session times**. How long an ROI takes depends too much on the case (and on interruptions) to say
+anything; the model's progress is measured on the masks instead: cells changed (``finish``), the toggled cells (to
+define) and the test regions. AnnoCell only records two moments per ROI, in the review of ``annotation.json``:
+
+- ``started_at``: the first save, which comes with the first change (opening and closing does not start an ROI);
+- ``completed_at``: the save at which no cell was left unreviewed; cleared if a cell is unchecked again.
 
 ## What AnnOverview shows
 
@@ -102,7 +105,7 @@ automatic polling).
 - **Per round**: ROIs assigned, complete (going into training, see Rounds) and unfinished, and their cells.
 - **Now**: per annotator, the ROI saved last and when. Only as fresh as the last save: an annotator who stopped
   looks the same as one who is offline.
-- **History** (with the sessions): per annotator, the ROIs worked on, when, for how long.
+- **History**: every ROI started, most recent first: annotator, round, ROI, started, finished, state.
 - **Slide map** (later): each slide with the ROIs and the test region drawn on it, coloured by status, over a
   thumbnail that AnnoLoop writes once per slide (`slides/<slide>.png`).
 
@@ -130,7 +133,7 @@ So one slow or stuck ROI never holds back the next model.
 shows per round is the number of ROIs the next training will take. (Training then cuts them into tiles and keeps
 some aside for validation: AnnOverview counts ROIs and cells, not tiles.)
 
-**ROIs per annotator per round**: *to decide*. Measured from the first real round (time per ROI from the sessions).
+**ROIs per annotator per round**: *to decide*. Decided after the first real round, from how many ROIs the annotators finished in it.
 Fewer, smaller rounds iterate faster (the model improves sooner and the next corrections are quicker); the limit is
 the time to train and export a round.
 
@@ -167,7 +170,8 @@ tissue already there only if its staining or quality looks clearly different. Si
       warning, retry). Needs only step 1: before or after step 2.
    4. AnnOverview: the repository; the tree with status and last save; refresh button; tried on folders exported
       by step 2.
-2. **History**: sessions in AnnoCell; history and "now" in AnnOverview.
+2. **History**: ``started_at`` / ``completed_at`` in AnnoCell's review; the dates and the history table in
+   AnnOverview.
 3. **Proposing ROIs** in AnnoLoop, with the rules above.
 4. **Slide map**: thumbnails from AnnoLoop, the map in AnnOverview.
 

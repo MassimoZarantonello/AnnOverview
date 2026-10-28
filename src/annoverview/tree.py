@@ -33,6 +33,8 @@ class RoiStatus:
     ok: int = 0
     unreviewed: int = 0
     saved_at: datetime | None = None
+    started_at: datetime | None = None  # the annotator's first save (first change)
+    completed_at: datetime | None = None  # when the last cell was checked; None while not complete
     source: str | None = None  # the slide
     problem: str | None = None  # could not be read (e.g. half synced, or a newer folder format)
 
@@ -77,9 +79,20 @@ def _status(roi: af.Roi) -> RoiStatus:
         cells=review.get("cells", 0),
         ok=review.get(af.OK, 0),
         unreviewed=review.get(af.UNREVIEWED, 0),
-        saved_at=datetime.fromisoformat(review["saved_at"]) if review.get("saved_at") else None,
+        saved_at=_moment(review.get("saved_at")),
+        started_at=_moment(review.get("started_at")),
+        completed_at=_moment(review.get("completed_at")),
         source=record.get("source"),
     )
+
+
+def _moment(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
+
+def history(rois: Sequence[RoiStatus]) -> list[RoiStatus]:
+    """The ROIs started so far, most recently started first: who worked on what, and when they finished."""
+    return sorted((r for r in rois if r.started_at), key=lambda r: r.started_at, reverse=True)
 
 
 def round_summary(rois: Sequence[RoiStatus]) -> list[dict]:

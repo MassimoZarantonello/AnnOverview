@@ -7,8 +7,18 @@ from datetime import datetime, timedelta
 
 from annocell import folder as af
 
-from annoverview.app import tree_nodes
-from annoverview.tree import COMPLETE, DRAWN, IN_PROGRESS, NOT_STARTED, ago, latest_saves, read_tree, round_summary
+from annoverview.app import history_rows, roi_label, tree_nodes
+from annoverview.tree import (
+    COMPLETE,
+    DRAWN,
+    IN_PROGRESS,
+    NOT_STARTED,
+    ago,
+    history,
+    latest_saves,
+    read_tree,
+    round_summary,
+)
 
 
 def test_read_tree_gives_every_roi_its_state(tree):
@@ -60,8 +70,23 @@ def test_tree_nodes_by_annotator_and_by_round(tree):
     alice = by_annotator[0]["children"]
     assert [n["label"] for n in alice] == ["round 1: 1 of 2 done, closed", "round 2: 1 of 2 done"]
     leaf = alice[0]["children"][1]
-    assert leaf["label"].startswith("exp201_b: in progress, 2 of 4 cells checked, saved ") and "closed" in leaf["label"]
+    assert leaf["label"].startswith("exp201_b: in progress, 2 of 4 cells checked, started ")
+    assert "closed" in leaf["label"]
     assert leaf["cls"] == "text-amber-700"
     by_round = tree_nodes(rois, "round", now)
     assert [n["label"].split(":")[0] for n in by_round] == ["round 1", "round 2", "test regions"]
     assert [n["label"].split(":")[0] for n in by_round[1]["children"]] == ["alice", "bob"]
+
+
+def test_history_says_when_each_roi_was_started_and_finished(tree):
+    rois = read_tree(tree)
+    started = history(rois)
+    assert len(started) == 7 and "exp201_d" not in {r.name for r in started}  # never saved: not started
+    by_name = {r.name: r for r in rois}
+    assert by_name["exp201_a"].completed_at and by_name["exp201_b"].completed_at is None
+    assert by_name["exp201_b"].started_at <= by_name["exp201_b"].saved_at
+    rows = {row["roi"]: row for row in history_rows(rois)}
+    assert rows["exp201_a"]["finished"] and rows["exp201_b"]["finished"] == ""
+    assert rows["exp201_a"]["state"] == "complete, closed" and rows["exp201_test"]["round"] == "test"
+    assert "finished" in roi_label(by_name["exp201_a"], datetime.now())
+    assert "started" in roi_label(by_name["exp201_b"], datetime.now())
