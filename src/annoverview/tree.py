@@ -1,7 +1,11 @@
-"""The shared folder read into one status per ROI, with annocell core only (no GUI): what the page shows.
+"""The shared folder read into one status per image, with annocell core only (no GUI): what the page shows.
 
-Everything is read through ``annocell.folder`` (the tree walker ``rois``, ``is_complete``, ``is_closed``), so the
-layout and the meaning of "complete" are AnnoCell's, the same as the pipeline's training. Nothing is ever written.
+Everything is read through ``annocell.folder`` (the tree walker ``rois``, ``read_review``, ``is_complete``,
+``is_closed``), so the layout and the meaning of "complete" are AnnoCell's, the same as the pipeline's training.
+Nothing is ever written.
+
+No annotator is timed: when each one saved, started or finished an image is not read (AnnoLoop's rule of no
+monitoring). What the page shows is per round: images by state, and how many go into training.
 """
 
 from __future__ import annotations
@@ -9,19 +13,19 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from annocell import folder as af
 
-# State of an ROI, from what AnnoCell saved.
+# State of an image, from what AnnoCell saved.
 NOT_STARTED, IN_PROGRESS, COMPLETE = "not started", "in progress", "complete"
 DRAWN = "drawn"  # a test region with cells: whether the expert has finished cannot be told from the files
 
 
 @dataclass(frozen=True)
 class RoiStatus:
-    """One ROI folder: who, which round (None for a test region), where, and how far the annotator got."""
+    """One image folder (``annocell.folder.Roi``): who, which round (None for a test region), where, and how far
+    the annotator got."""
 
     folder: Path
     annotator: str
@@ -37,9 +41,6 @@ class RoiStatus:
     deleted: int = 0
     ok: int = 0
     unreviewed: int = 0
-    saved_at: datetime | None = None
-    started_at: datetime | None = None  # the annotator's first save (first change)
-    completed_at: datetime | None = None  # when the last cell was checked; None while not complete
     source: str | None = None  # the slide
     problem: str | None = None  # could not be read (e.g. half synced, or a newer folder format)
 
@@ -49,12 +50,12 @@ class RoiStatus:
 
     @property
     def into_training(self) -> bool:
-        """What the next training takes: a complete training ROI."""
+        """What the next training takes: a complete training image."""
         return not self.is_test and self.state == COMPLETE
 
 
 def read_tree(root: str | Path) -> list[RoiStatus]:
-    """Every ROI under ``root``, in the order of ``annocell.folder.rois`` (annotator, round, test last, name)."""
+    """Every image under ``root``, in the order of ``annocell.folder.rois`` (annotator, round, test last, name)."""
     return [_status(roi) for roi in af.rois(root)]
 
 
@@ -66,6 +67,9 @@ def _status(roi: af.Roi) -> RoiStatus:
     version = record.get("format_version", af.FORMAT_VERSION)
     if version > af.FORMAT_VERSION:  # a newer AnnoCell wrote it: update annocell rather than guess
         problem = f"folder format {version}, this AnnOverview reads up to {af.FORMAT_VERSION}"
+        return RoiStatus(roi.folder, roi.annotator, roi.round, roi.name, NOT_STARTED, problem=problem)
+    if version < af.FORMAT_VERSION:  # an older layout, which annocell no longer reads: shown, not miscounted
+        problem = f"folder format {version}, older than {af.FORMAT_VERSION}: export it again"
         return RoiStatus(roi.folder, roi.annotator, roi.round, roi.name, NOT_STARTED, problem=problem)
     try:
         review = af.read_review(roi.folder)  # AnnoCell's review.json (empty if never saved)
@@ -91,19 +95,12 @@ def _status(roi: af.Roi) -> RoiStatus:
         edited=review.get(af.EDITED, 0),
         drawn=review.get(af.DRAWN, 0),
         deleted=review.get("deleted", 0),
-        saved_at=_moment(review.get("saved_at")),
-        started_at=_moment(review.get("started_at")),
-        completed_at=_moment(review.get("completed_at")),
         source=record.get("source"),
     )
 
 
-def _moment(value: str | None) -> datetime | None:
-    return datetime.fromisoformat(value) if value else None
-
-
 def corrections(rois: Sequence[RoiStatus]) -> list[dict]:
-    """Per round, over its complete training ROIs: how much of the proposal the annotators kept, edited and
+    """Per round, over its complete training images: how much of the proposal the annotators kept, edited and
     deleted, and how many cells they drew new, as counts and as % of the proposal's cells. If the model improves,
     the kept share grows from round to round."""
     rows = []
@@ -138,13 +135,8 @@ def model_scores(root: str | Path) -> list[dict]:
     return rows
 
 
-def history(rois: Sequence[RoiStatus]) -> list[RoiStatus]:
-    """The ROIs started so far, most recently started first: who worked on what, and when they finished."""
-    return sorted((r for r in rois if r.started_at), key=lambda r: r.started_at, reverse=True)
-
-
 def round_summary(rois: Sequence[RoiStatus]) -> list[dict]:
-    """Per round: annotators, ROIs by state, ROIs going into training, cells checked, whether closed."""
+    """Per round: annotators, images by state, images going into training, cells checked, whether closed."""
     rows = []
     for number in sorted({r.round for r in rois if not r.is_test}):
         group = [r for r in rois if r.round == number]
@@ -163,26 +155,3 @@ def round_summary(rois: Sequence[RoiStatus]) -> list[dict]:
             }
         )
     return rows
-
-
-def latest_saves(rois: Sequence[RoiStatus]) -> dict[str, RoiStatus]:
-    """Per annotator, the ROI saved last: what they are working on (as of their last save, not live)."""
-    latest = {}
-    for roi in rois:
-        if roi.saved_at and (roi.annotator not in latest or roi.saved_at > latest[roi.annotator].saved_at):
-            latest[roi.annotator] = roi
-    return latest
-
-
-def ago(moment: datetime | None, now: datetime) -> str:
-    """``moment`` as "5 min ago", "3 h ago", "2 days ago"; "never" for None."""
-    if moment is None:
-        return "never"
-    minutes = int((now - moment).total_seconds() // 60)
-    if minutes < 1:
-        return "just now"
-    if minutes < 60:
-        return f"{minutes} min ago"
-    if minutes < 48 * 60:
-        return f"{minutes // 60} h ago"
-    return f"{minutes // (24 * 60)} days ago"

@@ -1,9 +1,9 @@
-"""Pictures of the ROIs for the graph: the visible channels (the proteins) in a multiplex palette (magenta, teal,
-blue rather than plain red, green, blue), nothing drawn over them. The ROI's state is the frame of its node.
+"""Pictures of the images for the graph: the visible channels (the proteins) in a multiplex palette (magenta, teal,
+blue rather than plain red, green, blue), nothing drawn over them. The image's state is the frame of its node.
 
-Reading an ROI means reading its ``image.tif`` (about 12 MB) from the network drive, so every picture is cached on
-this computer. It depends only on the image and on which channels are shown in which colours, so the annotator's
-saves never make it drawn again.
+Drawing an image means reading its whole ``image.tif`` (all channels, tens to hundreds of MB for a whole image)
+from the network drive, so every picture is cached on this computer. It depends only on the image and on which
+channels are shown in which colours, so the annotator's saves never make it drawn again.
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ CHANNEL_RGB |= {"magenta": (1, 0.24, 0.78), "cyan": (0.2, 0.85, 1), "yellow": (1
 
 
 def thumbnail_uri(folder: str | Path) -> str:
-    """The picture of ROI ``folder`` as a ``data:`` URI, from the cache when the image and its colours are the same."""
+    """The picture of the image in ``folder`` as a ``data:`` URI, from the cache when the image and its colours are
+    the same."""
     folder = Path(folder)
     record = af.read_record(folder)
     shown = json.dumps([record.get("visible_channels"), record.get("colours")], sort_keys=True)
@@ -41,7 +42,7 @@ def thumbnail_uri(folder: str | Path) -> str:
 
 
 def render(folder: Path, size_px: int = SIZE_PX) -> bytes:
-    """PNG bytes of the picture of the ROI in ``folder``: the visible channels, screen-blended (1 - product of 1 -
+    """PNG bytes of the picture of the image in ``folder``: the visible channels, screen-blended (1 - product of 1 -
     channel: bright where any channel is, without clipping to flat white) in the multiplex palette."""
     from PIL import Image
 

@@ -1,8 +1,8 @@
-"""The graph of one round: slides on the left, ROIs in the middle (a picture each), annotators on the right; a link
-from the slide an ROI was cut from, and from the ROI to each annotator who has it. An ROI given to several
-annotators (shared, to compare them) is one node with several links.
+"""The graph of one round: slides on the left, images in the middle (a picture each), annotators on the right; a
+link from the slide an image was cut from, and from the image to each annotator who has it. An image given to several
+annotators (shared, to compare them) is one node with several links. (Node ids keep the format's word: ``roi:``.)
 
-Each column sits in a framed area (a compound node) named after it: Slides, ROIs, Annotators. Positions are computed
+Each column sits in a framed area (a compound node) named after it: Slides, Images, Annotators. Positions are computed
 here (columns, in order), not by a layout algorithm: the same folder always gives the same
 picture, and links cross as little as the order allows. The page draws the elements with Cytoscape.js.
 """
@@ -10,16 +10,15 @@ picture, and links cross as little as the order allows. The page draws the eleme
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import datetime
 
-from annoverview.tree import COMPLETE, DRAWN, IN_PROGRESS, NOT_STARTED, RoiStatus, ago
+from annoverview.tree import COMPLETE, DRAWN, IN_PROGRESS, NOT_STARTED, RoiStatus
 
 COLUMN_X = {"slide": 0, "roi": 480, "annotator": 960}
-ROI_GAP_Y = 200  # between rows of ROI lenses
-ROI_GAP_X = 190  # between ROI lenses in a row
+ROI_GAP_Y = 200  # between rows of image lenses
+ROI_GAP_X = 190  # between image lenses in a row
 MIN_GAP_Y = 110  # between slides, and between annotators
 NO_SLIDE = "no slide"
-AREAS = {"slide": "Slides", "roi": "ROIs", "annotator": "Annotators"}  # the framed area of each column
+AREAS = {"slide": "Slides", "roi": "Images", "annotator": "Annotators"}  # the framed area of each column
 
 
 def round_keys(rois: Sequence[RoiStatus]) -> list[int | None]:
@@ -28,7 +27,7 @@ def round_keys(rois: Sequence[RoiStatus]) -> list[int | None]:
 
 
 def group_state(versions: Sequence[RoiStatus]) -> str:
-    """One state for an ROI over the annotators who have it: complete only when every version is."""
+    """One state for an image over the annotators who have it: complete only when every version is."""
     if any(v.problem for v in versions):
         return "problem"
     done = [v.state in (COMPLETE, DRAWN) for v in versions]
@@ -40,17 +39,17 @@ def group_state(versions: Sequence[RoiStatus]) -> str:
 
 
 def graph_elements(
-    rois: Sequence[RoiStatus], round_key: int | None, now: datetime, picture: Callable[[RoiStatus], str] | None = None
+    rois: Sequence[RoiStatus], round_key: int | None, picture: Callable[[RoiStatus], str] | None = None
 ) -> tuple[list[dict], dict[str, list[str]]]:
     """Cytoscape elements (nodes with positions, then links) of round ``round_key`` (None: test regions), and the
-    details shown when a node is clicked (lines of text, by node id). ``picture``: the image URI of an ROI."""
+    details shown when a node is clicked (lines of text, by node id). ``picture``: the picture URI of an image."""
     shown = [r for r in rois if r.round == round_key]
     groups: dict[str, list[RoiStatus]] = {}
-    for roi in shown:  # one ROI: the same folder name in the same round, whoever has it
+    for roi in shown:  # one image: the same folder name in the same round, whoever has it
         groups.setdefault(roi.name, []).append(roi)
     # Order: by slide, then by the annotators who have it, so that links run as straight as possible.
     order = sorted(groups, key=lambda n: (groups[n][0].source or NO_SLIDE, sorted(v.annotator for v in groups[n]), n))
-    # ROIs in a grid inside their area, a few per row, so that a round with many stays compact enough to read.
+    # Images in a grid inside their area, a few per row, so that a round with many stays compact enough to read.
     per_row = 1 if len(order) <= 3 else 2 if len(order) <= 10 else 3
     roi_y = {name: (i // per_row) * ROI_GAP_Y for i, name in enumerate(order)}
     roi_x = {name: COLUMN_X["roi"] + (i % per_row - (per_row - 1) / 2) * ROI_GAP_X for i, name in enumerate(order)}
@@ -70,9 +69,9 @@ def graph_elements(
         if picture is not None:
             data["image"] = picture(versions[0])
         nodes.append({"data": data, "position": {"x": roi_x[name], "y": roi_y[name]}, "classes": " ".join(classes)})
-        details[node] = [f"ROI {name}", f"slide: {versions[0].source or NO_SLIDE}"]
+        details[node] = [f"image {name}", f"slide: {versions[0].source or NO_SLIDE}"]
         for v in sorted(versions, key=lambda v: v.annotator):
-            details[node].append(_version_line(v, now))
+            details[node].append(_version_line(v))
             if v.into_training:  # complete: what the annotator did to the proposal
                 details[node].append(_corrections_line(v, shared=len(versions) > 1))
 
@@ -80,24 +79,23 @@ def graph_elements(
         node = f"slide:{slide}"
         nodes.append(_side_node(node, slide, "slide", [roi_y[n] for n in names]))
         edges += [{"data": {"id": f"{node}->{n}", "source": node, "target": f"roi:{n}"}} for n in names]
-        details[node] = [f"slide {slide}", f"{len(names)} ROIs in this round"]
+        details[node] = [f"slide {slide}", f"{len(names)} images in this round"]
 
     for annotator in sorted({r.annotator for r in shown}):
         theirs = [r for r in shown if r.annotator == annotator]
         node = f"annotator:{annotator}"
         done = sum(r.state in (COMPLETE, DRAWN) for r in theirs)
-        last = max((r.saved_at for r in theirs if r.saved_at), default=None)
-        label = f"{annotator}\n{done} of {len(theirs)} done\nsaved {ago(last, now)}"
+        label = f"{annotator}\n{done} of {len(theirs)} done"
         nodes.append(_side_node(node, label, "annotator", [roi_y[r.name] for r in theirs]))
         edges += [
             {"data": {"id": f"roi:{r.name}->{node}", "source": f"roi:{r.name}", "target": node}, "classes": _cls(r)}
             for r in theirs
         ]
-        details[node] = [f"annotator {annotator}", f"{done} of {len(theirs)} ROIs done, saved {ago(last, now)}"]
-        details[node] += [_version_line(r, now, who=False) for r in theirs]
+        details[node] = [f"annotator {annotator}", f"{done} of {len(theirs)} images done"]
+        details[node] += [_version_line(r, who=False) for r in theirs]
     _spread([n for n in nodes if "slide" in n["classes"]])
     _spread([n for n in nodes if "annotator" in n["classes"]])
-    # Invisible points at the top and bottom of the ROI column in the two side areas: the three areas have the same
+    # Invisible points at the top and bottom of the image column in the two side areas: the three areas have the same
     # height, like columns, whatever the number of slides and annotators.
     top, bottom = min(roi_y.values(), default=0), max(roi_y.values(), default=0)
     for kind in ("slide", "annotator"):
@@ -115,7 +113,7 @@ def graph_elements(
 
 
 def _corrections_line(roi: RoiStatus, shared: bool) -> str:
-    """How a complete ROI's proposal was corrected: kept, edited and deleted as counts and % of the proposal's
+    """How a complete image's proposal was corrected: kept, edited and deleted as counts and % of the proposal's
     cells, and the cells drawn new."""
     proposal = roi.kept + roi.edited + roi.deleted
     if not proposal:
@@ -131,18 +129,12 @@ def _corrections_line(roi: RoiStatus, shared: bool) -> str:
     )
 
 
-def _version_line(roi: RoiStatus, now: datetime, who: bool = True) -> str:
-    """One annotator's version of an ROI: state, cells, dates."""
+def _version_line(roi: RoiStatus, who: bool = True) -> str:
+    """One annotator's version of an image: state, cells, closed."""
     head = roi.annotator if who else roi.name
     if roi.problem:
         return f"{head}: cannot be read ({roi.problem})"
     parts = [roi.state, f"{roi.ok} of {roi.cells} cells checked" if roi.state == IN_PROGRESS else f"{roi.cells} cells"]
-    if roi.started_at:
-        parts.append(f"started {roi.started_at:%d %b %H:%M}")
-    if roi.completed_at and not roi.is_test:
-        parts.append(f"finished {roi.completed_at:%d %b %H:%M}")
-    if roi.saved_at:
-        parts.append(f"saved {ago(roi.saved_at, now)}")
     if roi.closed:
         parts.append("closed")
     return f"{head}: {', '.join(parts)}"
@@ -154,7 +146,7 @@ def _cls(roi: RoiStatus) -> str:
 
 
 def _side_node(node: str, label: str, kind: str, ys: list[float]) -> dict:
-    """A slide or annotator node, level with the middle of its ROIs."""
+    """A slide or annotator node, level with the middle of its images."""
     return {
         "data": {"id": node, "label": label, "parent": f"area:{kind}"},
         "position": {"x": COLUMN_X[kind], "y": sum(ys) / len(ys)},

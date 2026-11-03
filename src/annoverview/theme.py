@@ -1,6 +1,6 @@
 """The look of the page: neutral graphite. Grey grounds one step apart, rounded nodes clearly lighter than the ground
 with a light grey edge, an off-white for selection instead of a bright accent, and state colours kept muted (sage,
-ochre, grey, a dull red) so that the only vivid colours on the page are the ROI images themselves. IBM Plex Sans
+ochre, grey, a dull red) so that the only vivid colours on the page are the images themselves. IBM Plex Sans
 Condensed for text, IBM Plex Mono for numbers and names. The graph's style (Cytoscape) uses the same colours.
 
 States keep AnnoCell's meaning: grey not started, ochre (yellow) in progress, sage (green) complete; red a folder
@@ -86,7 +86,7 @@ GRAPH_STYLE = [
     {
         "selector": "node.roi",
         "style": {
-            # The tissue in a rounded frame in the colour of the ROI's state.
+            # The tissue in a rounded frame in the colour of the image's state.
             "shape": "round-rectangle",
             "corner-radius": 14,
             "width": 150,
@@ -107,7 +107,7 @@ GRAPH_STYLE = [
     {"selector": "node.closed", "style": {"opacity": 0.45}},
     {"selector": "node.spacer", "style": {"width": 1, "height": 1, "opacity": 0, "events": "no"}},
     {
-        # The framed areas (compound nodes) around each column: Slides, ROIs, Annotators.
+        # The framed areas (compound nodes) around each column: Slides, Images, Annotators.
         "selector": "node.area",
         "style": {
             "shape": "round-rectangle",

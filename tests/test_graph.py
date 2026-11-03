@@ -1,8 +1,6 @@
-"""The graph of a round (nodes, links, details) and the ROI pictures."""
+"""The graph of a round (nodes, links, details) and the image pictures."""
 
 from __future__ import annotations
-
-from datetime import datetime
 
 from annoverview.graph import COLUMN_X, graph_elements, round_keys
 from annoverview.thumbs import render, thumbnail_uri
@@ -11,10 +9,10 @@ from conftest import write_roi
 
 
 def test_graph_of_a_round_links_slides_rois_and_annotators(tree):
-    write_roi(tree, "carla", 2, "exp201_c", checked=1)  # alice's ROI given to carla too: shared
+    write_roi(tree, "carla", 2, "exp201_c", checked=1)  # alice's image given to carla too: shared
     rois = read_tree(tree)
     assert round_keys(rois) == [1, 2, None]
-    elements, details = graph_elements(rois, 2, datetime.now())
+    elements, details = graph_elements(rois, 2)
     nodes = {e["data"]["id"]: e for e in elements if "source" not in e["data"]}
     links = {(e["data"]["source"], e["data"]["target"]) for e in elements if "source" in e["data"]}
     rois_shown = {n for n in nodes if n.startswith("roi:")}
@@ -30,7 +28,7 @@ def test_graph_of_a_round_links_slides_rois_and_annotators(tree):
     lines = details["roi:exp201_c"]
     assert lines[2].startswith("alice: complete") and lines[3].startswith("corrections alice: kept 4 (100 %)")
     assert lines[4].startswith("carla")  # carla has not finished: no corrections line
-    closed = graph_elements(rois, 1, datetime.now())[0]
+    closed = graph_elements(rois, 1)[0]
     closed_rois = [e for e in closed if e["data"]["id"].startswith("roi:") and "source" not in e["data"]]
     assert closed_rois and all("closed" in e["classes"] for e in closed_rois)
 
@@ -54,7 +52,7 @@ def test_details_of_a_complete_roi_show_its_corrections(tmp_path):
         return RoiStatus(folder, annotator, 2, name, state, kept=kept, edited=edited, deleted=deleted, drawn=drawn)
 
     rois = [roi("alice", "a", COMPLETE, 60, 20, 20, 5), roi("bob", "b", IN_PROGRESS, 50, 0, 0, 0)]
-    _, details = graph_elements(rois, 2, datetime.now())
+    _, details = graph_elements(rois, 2)
     assert details["roi:a"][-1] == (
         "corrections: kept 60 (60 %), edited 20 (20 %), deleted 20 (20 %), drawn new 5, of 100 proposed"
     )

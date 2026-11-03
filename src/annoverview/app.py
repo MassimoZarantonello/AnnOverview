@@ -1,10 +1,11 @@
 """The page: ``annoverview <root>`` opens it in the browser, read from the shared folder at every Refresh.
 
-Two tabs, both filterable by slide. **Graph**: one round as nodes and links (slides → ROIs, a picture each →
-annotators), moved and zoomed with the mouse; a click on a node shows its details. **Tables**: the rounds (ROIs by
-state, how many go into training), now (what each annotator saved last), the tree (annotator → round → ROI, or
-round → annotator → ROI) and the history (when each ROI was started and finished). Read-only: the page has no
-control that writes anything.
+Three tabs, all filterable by slide. **Graph**: one round as nodes and links (slides → images, a picture each →
+annotators), moved and zoomed with the mouse; a click on a node shows its details. **Progress**: how much of the
+model's proposal was kept, round by round, and the models' scores on the test regions. **Tables**: the rounds (images
+by state, how many go into training) and the tree (annotator → round → image, or round → annotator → image).
+Read-only: the page has no control that writes anything. No annotator is timed: no last save, no started or finished
+dates (AnnoLoop's rule of no monitoring).
 """
 
 from __future__ import annotations
@@ -23,10 +24,7 @@ from annoverview.tree import (
     IN_PROGRESS,
     NOT_STARTED,
     RoiStatus,
-    ago,
     corrections,
-    history,
-    latest_saves,
     model_scores,
     read_tree,
 )
@@ -43,8 +41,8 @@ ALL_SLIDES = "all slides"
 UNSET = "unset"
 
 
-def roi_label(roi: RoiStatus, now: datetime) -> str:
-    """One line per ROI: name, state, cells checked, last save, closed."""
+def roi_label(roi: RoiStatus) -> str:
+    """One line per image: name, state, cells checked, closed."""
     if roi.problem:
         return f"{roi.name}: cannot be read ({roi.problem})"
     parts = [roi.state]
@@ -52,33 +50,27 @@ def roi_label(roi: RoiStatus, now: datetime) -> str:
         parts.append(f"{roi.ok} of {roi.cells} cells checked")
     elif roi.cells:
         parts.append(f"{roi.cells} cells")
-    if roi.completed_at and not roi.is_test:
-        parts.append(f"finished {_day(roi.completed_at)}")
-    elif roi.started_at:
-        parts.append(f"started {_day(roi.started_at)}")
-    if roi.saved_at:
-        parts.append(f"saved {ago(roi.saved_at, now)}")
     if roi.closed:
         parts.append("closed")
     return f"{roi.name}: {', '.join(parts)}"
 
 
 def group_label(title: str, rois: list[RoiStatus]) -> str:
-    """A round or an annotator: how many of its ROIs are done."""
+    """A round or an annotator: how many of its images are done."""
     done = sum(r.state in (COMPLETE, DRAWN) for r in rois)
     closed = ", closed" if rois and all(r.closed for r in rois) else ""
     return f"{title}: {done} of {len(rois)} done{closed}"
 
 
-def tree_nodes(rois: list[RoiStatus], by: str, now: datetime) -> list[dict]:
-    """``ui.tree`` nodes: annotator → round → ROI (``by == "annotator"``) or round → annotator → ROI. Second-level
-    nodes have ``open``: not every ROI in them is closed (the page shows those expanded)."""
+def tree_nodes(rois: list[RoiStatus], by: str) -> list[dict]:
+    """``ui.tree`` nodes: annotator → round → image (``by == "annotator"``) or round → annotator → image.
+    Second-level nodes have ``open``: not every image in them is closed (the page shows those expanded)."""
 
     def round_title(number):
         return "test regions" if number is None else f"round {number}"
 
     def leaf(roi):
-        return {"id": str(roi.folder), "label": roi_label(roi, now), "cls": _cls(roi)}
+        return {"id": str(roi.folder), "label": roi_label(roi), "cls": _cls(roi)}
 
     def order(number):  # rounds in order, test regions last
         return (number is None, number or 0)
@@ -119,26 +111,6 @@ def tree_nodes(rois: list[RoiStatus], by: str, now: datetime) -> list[dict]:
     return nodes
 
 
-def _day(moment: datetime | None) -> str:
-    return "" if moment is None else f"{moment:%d %b %H:%M}"
-
-
-def history_rows(rois: list[RoiStatus]) -> list[dict]:
-    """The history table: one row per ROI started, most recent first."""
-    return [
-        {
-            "id": str(r.folder),
-            "annotator": r.annotator,
-            "round": "test" if r.is_test else r.round,
-            "roi": r.name,
-            "started": _day(r.started_at),
-            "finished": "" if r.is_test else _day(r.completed_at),
-            "state": r.state + (", closed" if r.closed else ""),
-        }
-        for r in history(rois)
-    ]
-
-
 def _cls(roi: RoiStatus) -> str:
     return "st-problem" if roi.problem else STATE_CLASS[roi.state]
 
@@ -165,7 +137,7 @@ def build_page(root: Path) -> None:
         ui.label("Selection").classes("eyebrow")
         lines = details.get(view["selected"])
         if not lines:
-            ui.label("Click a node: a slide, an ROI or an annotator.").classes("text-sm muted")
+            ui.label("Click a node: a slide, an image or an annotator.").classes("text-sm muted")
             return
         ui.label(lines[0]).classes("mono text-sm").style("margin: 2px 0 6px")
         for line in lines[1:]:
@@ -202,7 +174,7 @@ def build_page(root: Path) -> None:
             )
         if not rois:
             with ui.element("div").classes("section"):
-                ui.label("No ROI folder here: the root holds one folder per annotator.").classes("st-problem")
+                ui.label("No image folder here: the root holds one folder per annotator.").classes("st-problem")
             return
         with ui.tabs(value=view["tab"], on_change=lambda e: view.update(tab=e.value)).props(
             "dense align=left active-color=white indicator-color=primary"
@@ -212,17 +184,17 @@ def build_page(root: Path) -> None:
             ui.tab("Tables")
         with ui.tab_panels(tabs, value=view["tab"]).classes("w-full").props("animated=false"):
             with ui.tab_panel("Graph"):
-                graph_panel(shown, now)
+                graph_panel(shown)
             with ui.tab_panel("Progress"):
                 progress(shown)
             with ui.tab_panel("Tables"):
-                tables(shown, now)
+                tables(shown)
 
-    def graph_panel(shown, now):
+    def graph_panel(shown):
         keys = round_keys(shown)
         if not keys:
             with ui.element("div").classes("section"):
-                ui.label("No ROI for this slide.").classes("muted")
+                ui.label("No image for this slide.").classes("muted")
             return
         if view["round"] not in keys:  # default: the latest round still open, else the latest
             open_rounds = [k for k in keys if k is not None and not all(r.closed for r in shown if r.round == k)]
@@ -238,11 +210,9 @@ def build_page(root: Path) -> None:
             ).classes("muted")
             ui.space()
             kpis(this_round)
-        elements, found = graph_elements(shown, view["round"], now, picture=_picture)
+        elements, found = graph_elements(shown, view["round"], picture=_picture)
         details.clear()
         details.update(found)
-        # The details float over the graph's top right corner and the legend over its bottom left: the graph keeps
-        # the whole width.
         # The graph and, in a column of its own beside it, the details of the node clicked: they never cover the
         # graph, and long details scroll in their column. The legend sits in the graph's bottom left corner.
         with ui.row().classes("w-full no-wrap items-stretch gap-4").style("padding: 0 20px 20px"):
@@ -298,8 +268,8 @@ def build_page(root: Path) -> None:
                     cy.nodes().not(".area, .spacer").forEach((node) => {{ positions[node.id()] = node.position(); }});
                     try {{ localStorage.setItem({key}, JSON.stringify(positions)); }} catch (error) {{}}
                 }});
-                // What a node is connected to: an ROI its slide and annotators; an annotator their ROIs and the
-                // slides they come from; a slide its ROIs and who has them.
+                // What a node is connected to: an image its slide and annotators; an annotator their images and the
+                // slides they come from; a slide its images and who has them.
                 const connected = (node) => node.hasClass("roi") ? node.closedNeighborhood()
                     : node.hasClass("annotator") ? node.predecessors().add(node)
                     : node.successors().add(node);
@@ -319,9 +289,9 @@ def build_page(root: Path) -> None:
         ui.timer(0.05, lambda: ui.run_javascript(script), once=True)
 
     def kpis(rois):
-        """The numbers of the round shown: ROIs, by state, and how many go into training."""
+        """The numbers of the round shown: images, by state, and how many go into training."""
         values = [
-            ("ROIs", len({r.name for r in rois}), ""),
+            ("images", len({r.name for r in rois}), ""),
             ("complete", sum(r.state in (COMPLETE, DRAWN) for r in rois), "st-complete"),
             ("in progress", sum(r.state == IN_PROGRESS for r in rois), "st-in-progress"),
             ("not started", sum(r.state == NOT_STARTED for r in rois), "st-not-started"),
@@ -351,13 +321,13 @@ def build_page(root: Path) -> None:
             with ui.row().classes("w-full no-wrap gap-4 items-stretch"):
                 with ui.element("div").classes("panel").style("flex: 1; min-width: 0; padding: 14px 16px"):
                     ui.label("How much of the proposal was kept, round by round").classes("eyebrow")
-                    ui.label("Complete ROIs only. If the model improves, the kept share grows.").classes(
+                    ui.label("Complete images only. If the model improves, the kept share grows.").classes(
                         "text-xs faint"
                     )
                     if fixes:
                         ui.echart(_corrections_chart(fixes)).style("height: 340px")
                     else:
-                        ui.label("No complete ROI yet.").classes("text-sm muted").style("margin-top: 12px")
+                        ui.label("No complete image yet.").classes("text-sm muted").style("margin-top: 12px")
                 scores = model_scores(root)
                 with ui.element("div").classes("panel").style("flex: 1; min-width: 0; padding: 14px 16px"):
                     ui.label("Score on the test regions, model by model").classes("eyebrow")
@@ -373,7 +343,7 @@ def build_page(root: Path) -> None:
                 {"name": k, "label": label, "field": k, "align": "left" if k == "round" else "right"}
                 for k, label in (
                     ("round", "Round"),
-                    ("rois", "Complete ROIs"),
+                    ("rois", "Complete images"),
                     ("proposal", "Proposed cells"),
                     ("kept_%", "Kept %"),
                     ("edited_%", "Edited %"),
@@ -394,13 +364,13 @@ def build_page(root: Path) -> None:
     def heading(text):
         ui.label(text).classes("eyebrow").style("margin: 22px 0 8px")
 
-    def tables(shown, now):
+    def tables(shown):
         with ui.element("div").classes("section w-full"):
             heading("Rounds")
             columns = [
                 {"name": "round", "label": "Round", "field": "round", "align": "left"},
                 {"name": "annotators", "label": "Annotators", "field": "annotators"},
-                {"name": "rois", "label": "ROIs", "field": "rois"},
+                {"name": "rois", "label": "Images", "field": "rois"},
                 {"name": NOT_STARTED, "label": "Not started", "field": NOT_STARTED},
                 {"name": IN_PROGRESS, "label": "In progress", "field": IN_PROGRESS},
                 {"name": COMPLETE, "label": "Complete", "field": COMPLETE},
@@ -411,38 +381,16 @@ def build_page(root: Path) -> None:
             rows = [{**row, "closed": "yes" if row["closed"] else ""} for row in summarize(shown)]
             ui.table(columns=columns, rows=rows, row_key="round").props("dense flat").classes("w-full")
 
-            heading("Now: last save of each annotator")
-            latest = latest_saves(shown)
-            with ui.element("div").classes("panel w-full"):
-                for annotator in sorted({r.annotator for r in shown}):
-                    roi = latest.get(annotator)
-                    where = "nothing saved yet" if roi is None else f"{_where(roi)}, saved {ago(roi.saved_at, now)}"
-                    row = ui.row().classes("no-wrap w-full")
-                    with row.style(f"padding: 7px 12px; border-top: 1px solid {theme.LINE}"):
-                        ui.label(annotator).classes("mono text-sm").style("width: 120px")
-                        ui.label(where).classes("text-sm muted")
-
-            heading("ROIs")
+            heading("Images")
             ui.toggle(
                 {"annotator": "by annotator", "round": "by round"}, value=view["by"], on_change=_set(view, "by")
             ).props("unelevated dense toggle-color=grey-4 toggle-text-color=grey-10 text-color=grey-5")
-            nodes = tree_nodes(shown, view["by"], now)
+            nodes = tree_nodes(shown, view["by"])
             with ui.element("div").classes("panel w-full").style("margin-top: 8px; padding: 8px"):
                 tree = ui.tree(nodes, label_key="label").props("dense")
                 tree.add_slot("default-header", '<span :class="props.node.cls">{{ props.node.label }}</span>')
-                # The first level, and below it what is not closed: the ROIs still being worked on show at once.
+                # The first level, and below it what is not closed: the images still being worked on show at once.
                 tree.expand([n["id"] for n in nodes] + [c["id"] for n in nodes for c in n["children"] if c["open"]])
-
-            heading("History: when each ROI was started and finished")
-            labels = {"annotator": "Annotator", "round": "Round", "roi": "ROI", "started": "Started"}
-            labels |= {"finished": "Finished", "state": "State"}
-            columns = [
-                {"name": key, "label": label, "field": key, "align": "left", "sortable": True}
-                for key, label in labels.items()
-            ]
-            ui.table(columns=columns, rows=history_rows(shown), row_key="id", pagination=20).props(
-                "dense flat"
-            ).classes("w-full")
 
     def _set(state, key):
         def change(event):
@@ -511,15 +459,11 @@ def _scores_chart(rows: list[dict]) -> dict:
 
 
 def _picture(roi: RoiStatus) -> str:
-    """The ROI's picture, or nothing if it cannot be drawn (the node then shows its ring only)."""
+    """The image's picture, or nothing if it cannot be drawn (the node then shows its ring only)."""
     try:
         return thumbnail_uri(roi.folder)
     except (OSError, ValueError, KeyError):
         return "none"
-
-
-def _where(roi: RoiStatus) -> str:
-    return f"{'test region' if roi.is_test else f'round {roi.round}'} / {roi.name}"
 
 
 def main(argv: list[str] | None = None) -> None:
