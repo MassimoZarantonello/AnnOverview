@@ -11,10 +11,18 @@ from annocell import folder as af
 
 
 def write_roi(
-    root: Path, annotator: str, round_number: int | None, name: str, checked: int | None = None, source="slide_a"
+    root: Path,
+    annotator: str,
+    round_number: int | None,
+    name: str,
+    checked: int | None = None,
+    source="slide_a",
+    bulk: int = 0,
+    done: bool = True,
 ) -> Path:
-    """An ROI with 4 proposed cells (a test region: none); ``checked``: AnnoCell saved it with that many cells OK
-    (None: never opened). Test regions: ``checked`` cells drawn."""
+    """An image with 4 proposed cells (a test region: none); ``checked``: AnnoCell saved it with that many cells OK
+    (None: never opened), the first ``bulk`` of them with "all in view OK". Test regions: ``checked`` cells drawn.
+    ``done``: saved with Done pressed (complete if every cell is OK)."""
     test = round_number is None
     group = af.test_regions_folder(root, annotator) if test else af.round_folder(root, annotator, round_number)
     folder = group / name
@@ -31,15 +39,15 @@ def write_roi(
         if test:
             masks[: 2 * checked, 0:2] = np.repeat(np.arange(1, checked + 1), 2)[:, None]
         cells = af.sync_cells({}, masks, start)
-        for i in list(cells)[:checked]:
-            cells[i].state = af.OK
-        af.save(folder, masks, cells)
+        for n, i in enumerate(list(cells)[:checked]):
+            cells[i].mark(af.OK, af.BULK if n < bulk else af.HAND)
+        af.save(folder, masks, cells, done=done)
     return folder
 
 
 def demo_tree(root: Path) -> Path:
-    """Two rounds for alice and bob (round 1 closed), a test region for carla, two slides."""
-    write_roi(root, "alice", 1, "exp201_a", checked=4)
+    """Two rounds for alice and bob (round 1 closed), two test regions for carla (one finished), two slides."""
+    write_roi(root, "alice", 1, "exp201_a", checked=4, bulk=3)
     write_roi(root, "alice", 1, "exp201_b", checked=2)  # unfinished when the round was closed
     write_roi(root, "bob", 1, "exp305_a", checked=4, source="slide_b")
     for annotator in ("alice", "bob"):
@@ -50,6 +58,7 @@ def demo_tree(root: Path) -> Path:
     write_roi(root, "bob", 2, "exp201_d")
     write_roi(root, "bob", 2, "exp305_c", checked=3, source="slide_b")
     write_roi(root, "carla", None, "exp201_test", checked=3)
+    write_roi(root, "carla", None, "exp305_test", checked=2, source="slide_b", done=False)  # still drawing
     return root
 
 

@@ -16,11 +16,10 @@ from datetime import datetime
 from pathlib import Path
 
 from annoverview import theme
-from annoverview.graph import graph_elements, round_keys
+from annoverview.graph import cell_count, graph_elements, round_keys
 from annoverview.thumbs import thumbnail_uri
 from annoverview.tree import (
     COMPLETE,
-    DRAWN,
     IN_PROGRESS,
     NOT_STARTED,
     RoiStatus,
@@ -35,7 +34,6 @@ STATE_CLASS = {
     NOT_STARTED: "st-not-started",
     IN_PROGRESS: "st-in-progress",
     COMPLETE: "st-complete",
-    DRAWN: "st-complete",
 }
 ALL_SLIDES = "all slides"
 UNSET = "unset"
@@ -46,10 +44,8 @@ def roi_label(roi: RoiStatus) -> str:
     if roi.problem:
         return f"{roi.name}: cannot be read ({roi.problem})"
     parts = [roi.state]
-    if roi.state == IN_PROGRESS:
-        parts.append(f"{roi.ok} of {roi.cells} cells checked")
-    elif roi.cells:
-        parts.append(f"{roi.cells} cells")
+    if roi.cells:
+        parts.append(cell_count(roi))
     if roi.closed:
         parts.append("closed")
     return f"{roi.name}: {', '.join(parts)}"
@@ -57,7 +53,7 @@ def roi_label(roi: RoiStatus) -> str:
 
 def group_label(title: str, rois: list[RoiStatus]) -> str:
     """A round or an annotator: how many of its images are done."""
-    done = sum(r.state in (COMPLETE, DRAWN) for r in rois)
+    done = sum(r.state == COMPLETE for r in rois)
     closed = ", closed" if rois and all(r.closed for r in rois) else ""
     return f"{title}: {done} of {len(rois)} done{closed}"
 
@@ -292,7 +288,7 @@ def build_page(root: Path) -> None:
         """The numbers of the round shown: images, by state, and how many go into training."""
         values = [
             ("images", len({r.name for r in rois}), ""),
-            ("complete", sum(r.state in (COMPLETE, DRAWN) for r in rois), "st-complete"),
+            ("complete", sum(r.state == COMPLETE for r in rois), "st-complete"),
             ("in progress", sum(r.state == IN_PROGRESS for r in rois), "st-in-progress"),
             ("not started", sum(r.state == NOT_STARTED for r in rois), "st-not-started"),
             ("into training", sum(r.into_training for r in rois), ""),
@@ -349,6 +345,9 @@ def build_page(root: Path) -> None:
                     ("edited_%", "Edited %"),
                     ("deleted_%", "Deleted %"),
                     ("drawn", "Drawn new"),
+                    ("ok_hand", "OK by hand"),
+                    ("ok_bulk", "OK in bulk"),
+                    ("ok_bulk_%", "In bulk %"),
                 )
             ]
             ui.table(columns=columns, rows=fixes, row_key="round").props("dense flat").classes("w-full")
@@ -376,6 +375,8 @@ def build_page(root: Path) -> None:
                 {"name": COMPLETE, "label": "Complete", "field": COMPLETE},
                 {"name": "into_training", "label": "Into training", "field": "into_training"},
                 {"name": "checked", "label": "Cells checked", "field": "checked"},
+                {"name": "ok_hand", "label": "By hand", "field": "ok_hand"},
+                {"name": "ok_bulk", "label": "In bulk", "field": "ok_bulk"},
                 {"name": "closed", "label": "Closed", "field": "closed"},
             ]
             rows = [{**row, "closed": "yes" if row["closed"] else ""} for row in summarize(shown)]

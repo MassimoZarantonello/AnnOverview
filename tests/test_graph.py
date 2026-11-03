@@ -27,6 +27,7 @@ def test_graph_of_a_round_links_slides_rois_and_annotators(tree):
     assert nodes["annotator:carla"]["data"]["parent"] == "area:annotator"
     lines = details["roi:exp201_c"]
     assert lines[2].startswith("alice: complete") and lines[3].startswith("corrections alice: kept 4 (100 %)")
+    assert lines[2] == "alice: complete, 4 cells, OK 4 by hand, 0 in bulk"
     assert lines[4].startswith("carla")  # carla has not finished: no corrections line
     closed = graph_elements(rois, 1)[0]
     closed_rois = [e for e in closed if e["data"]["id"].startswith("roi:") and "source" not in e["data"]]

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from annoverview.tree import COMPLETE, DRAWN, IN_PROGRESS, NOT_STARTED, RoiStatus
+from annoverview.tree import COMPLETE, IN_PROGRESS, NOT_STARTED, RoiStatus
 
 COLUMN_X = {"slide": 0, "roi": 480, "annotator": 960}
 ROI_GAP_Y = 200  # between rows of image lenses
@@ -30,7 +30,7 @@ def group_state(versions: Sequence[RoiStatus]) -> str:
     """One state for an image over the annotators who have it: complete only when every version is."""
     if any(v.problem for v in versions):
         return "problem"
-    done = [v.state in (COMPLETE, DRAWN) for v in versions]
+    done = [v.state == COMPLETE for v in versions]
     if all(done):
         return COMPLETE
     if any(done) or any(v.state == IN_PROGRESS for v in versions):
@@ -84,7 +84,7 @@ def graph_elements(
     for annotator in sorted({r.annotator for r in shown}):
         theirs = [r for r in shown if r.annotator == annotator]
         node = f"annotator:{annotator}"
-        done = sum(r.state in (COMPLETE, DRAWN) for r in theirs)
+        done = sum(r.state == COMPLETE for r in theirs)
         label = f"{annotator}\n{done} of {len(theirs)} done"
         nodes.append(_side_node(node, label, "annotator", [roi_y[r.name] for r in theirs]))
         edges += [
@@ -130,19 +130,28 @@ def _corrections_line(roi: RoiStatus, shared: bool) -> str:
 
 
 def _version_line(roi: RoiStatus, who: bool = True) -> str:
-    """One annotator's version of an image: state, cells, closed."""
+    """One annotator's version of an image: state, cells, how they became OK, closed."""
     head = roi.annotator if who else roi.name
     if roi.problem:
         return f"{head}: cannot be read ({roi.problem})"
-    parts = [roi.state, f"{roi.ok} of {roi.cells} cells checked" if roi.state == IN_PROGRESS else f"{roi.cells} cells"]
+    parts = [roi.state, cell_count(roi)]
+    if roi.ok and not roi.is_test:  # in a test region every cell is drawn, so OK by hand
+        parts.append(f"OK {roi.ok_hand} by hand, {roi.ok_bulk} in bulk")
     if roi.closed:
         parts.append("closed")
     return f"{head}: {', '.join(parts)}"
 
 
+def cell_count(roi: RoiStatus) -> str:
+    """The cells of an image: checked so far while in progress (drawn so far for a test region), else all."""
+    if roi.state == IN_PROGRESS:
+        return f"{roi.cells} cells drawn" if roi.is_test else f"{roi.ok} of {roi.cells} cells checked"
+    return f"{roi.cells} cells"
+
+
 def _cls(roi: RoiStatus) -> str:
     """The class of a link to an annotator: the state of that annotator's version."""
-    return "problem" if roi.problem else ("complete" if roi.state in (COMPLETE, DRAWN) else roi.state).replace(" ", "-")
+    return "problem" if roi.problem else roi.state.replace(" ", "-")
 
 
 def _side_node(node: str, label: str, kind: str, ys: list[float]) -> dict:

@@ -95,11 +95,13 @@ Folder format 2 of `annocell.folder`: one writer per file. `annotation.json` is 
 | `visible_channels`, `colours` | `annotation.json`, AnnoLoop at export | the picture of each image in the graph |
 | `closed_on` | `annotation.json`, AnnoLoop when a round ends | closed rounds |
 | `cells`, `ok`, `unreviewed`, `proposed` (kept), `edited`, `drawn`, `deleted` | `review.json`, AnnoCell at every save (`read_review`) | state, and the corrections of complete images |
+| `ok_hand`, `ok_bulk` | `review.json`, AnnoCell | how the OK cells became OK: one at a time, or with "all in view OK" |
+| `completed_at` | `review.json`, AnnoCell | only through `is_complete` (Done pressed); the time itself is not shown |
 | `saved_at` | `review.json`, AnnoCell | only whether AnnoCell ever saved (not started otherwise); the time itself is not shown |
 | `model`, `round`, `regions[*]["AP@…"]` | `scores/<model>.json`, AnnoLoop (`read_scores`) | the Progress tab |
 
-Not read: `region`, `exported_on`, `image`, `start_segmentation`, `compare`, the review's `started_at`,
-`completed_at`, `start_cells`, `ok_hand` / `ok_bulk` and `macrophages`.
+Not read: `region`, `exported_on`, `image`, `start_segmentation`, `compare`, the review's `started_at` and
+`start_cells`.
 
 A tree walker in `annocell.folder` (`rois`) lists the image folders under the root with annotator and round, for
 AnnoLoop and AnnOverview alike.
@@ -111,21 +113,24 @@ the case (and on interruptions) to say anything, and checking up on colleagues i
 model's progress is measured on the masks instead: how much of the proposal was kept (Progress tab), and the scores
 on the test regions.
 
-AnnoCell's review still records `started_at` (the first save) and `completed_at` (the save at which no cell was left
-unreviewed). AnnOverview does not read them. Whether AnnoCell should keep writing them is AnnoCell's decision.
+AnnoCell's review still records `started_at` (the first save) and `completed_at` (when the annotator pressed Done
+with every cell OK; cleared by any later change). AnnOverview shows neither: `completed_at` only decides "complete",
+through `is_complete`. Whether AnnoCell should keep writing the times is AnnoCell's decision.
 
 ## What AnnOverview shows
 
 A local web page (NiceGUI), started with `annoverview <root>` on the Mac, read again with a **refresh button** (no
 automatic polling). Listens on this computer only; `--share` opens it to the network.
 
-- **Status of an image**: not started (AnnoCell never saved it), in progress (*x* of *n* cells checked), complete (no
-  cell unreviewed: done), closed (round over). A test region with cells is "drawn". A folder that cannot be read
-  (half synced, other format) is shown as a problem.
+- **Status of an image**: not started (AnnoCell never saved it), in progress (*x* of *n* cells checked), complete (the
+  annotator pressed Done, every cell OK), closed (round over). A test region the same way: not started (nothing
+  drawn), in progress (*n* cells drawn), complete (the expert pressed Done). A folder that cannot be read (half
+  synced, other format) is shown as a problem.
 - **Graph** of one round: slides → images (a picture each, framed in the colour of its state) → annotators, dragged
   and zoomed with the mouse; a click shows the details of a node, and of a complete image its corrections (kept,
-  edited, deleted, drawn new).
-- **Per round**: images assigned, by state, going into training (see Rounds), cells checked, closed.
+  edited, deleted, drawn new); each annotator's version says how many OK cells were by hand and how many in bulk.
+- **Per round**: images assigned, by state, going into training (see Rounds), cells checked (by hand, in bulk),
+  closed.
 - **Tree**: annotator → round → image, and the same by round → annotator → image, filterable by slide.
 - **Progress**: per round, over the complete images, the share of the proposal's cells kept, edited and deleted (it
   should grow if the model improves); per model, the mean AP on the test regions.
@@ -148,22 +153,24 @@ So one slow or stuck image never holds back the next model.
   every round, never changed after looking at a test score (the score would stop being independent).
 - **Scored on the test regions only** (see Test regions).
 
-**Going into training** = complete (at least one cell, none unreviewed). Decided by one function of
+**Going into training** = complete (Done pressed, at least one cell, none unreviewed). Decided by one function of
 `annocell.folder` (`is_complete`), which AnnoLoop's training and AnnOverview both call, so the count AnnOverview
 shows per round is the number of images the next training will take. AnnOverview counts images and cells, not tiles.
 
 **Images per annotator per round**: 3–4 (AnnoLoop D2). Which images go in which round is AnnoLoop's (O3).
 
 **"Mark all in view as OK"** (Shift+O in AnnoCell) is allowed (AnnoLoop D6). AnnoCell now records how each cell
-became OK (`ok_by`: hand / bulk; counts `ok_hand`, `ok_bulk` in the review). *To decide*: whether the Progress tab
-shows the bulk share, or leaves bulk-OK'd cells out of "kept", which otherwise flatters the model (AnnoLoop O2).
+became OK (`ok_by`: hand / bulk; counts `ok_hand`, `ok_bulk` in the review). AnnOverview shows them: per round in
+the Rounds table, and over the complete images in the Progress table, with the bulk share of the OK cells; a high
+share means "kept" says less about the model (those cells were cleared, not looked at one by one). *To decide*
+(AnnoLoop O2): whether "kept" should leave bulk-OK'd cells out altogether.
 
 ## Test regions
 
 Drawn from scratch by one expert annotator, never given to anyone else and never used for training; in that
 annotator's folder (`<annotator>/test/<image>/`). AnnoLoop deals with the test set later (AnnoLoop D12), possibly a
-smaller image annotated from scratch. AnnOverview already shows the test regions (as "drawn") and the scores
-AnnoLoop writes for them; nothing here depends on how many there are.
+smaller image annotated from scratch. AnnOverview shows the test regions (complete once the expert pressed Done) and the
+scores AnnoLoop writes for them; nothing here depends on how many there are.
 
 ## Sprints
 

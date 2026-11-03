@@ -24,8 +24,9 @@ others on the network open it too. **Refresh** reads the folder again. Three tab
 - **Tables**: the rounds (images not started / in progress / complete, how many go into training, closed) and the
   tree of images, by annotator or by round.
 
-Status is as of each annotator's last save in AnnoCell. For a test region, "drawn" only says that cells were drawn:
-whether the expert has finished cannot be told from the files.
+Status is as of each annotator's last save in AnnoCell. An image, or a test region, is complete once the annotator
+pressed Done with every cell OK. The counts say how many OK cells were checked by hand and how many cleared in bulk
+("all in view OK").
 
 ## How it fits
 

@@ -17,9 +17,9 @@ from pathlib import Path
 
 from annocell import folder as af
 
-# State of an image, from what AnnoCell saved.
+# State of an image, from what AnnoCell saved; complete: the annotator pressed Done (``annocell.folder.is_complete``),
+# for a test region as for a training image.
 NOT_STARTED, IN_PROGRESS, COMPLETE = "not started", "in progress", "complete"
-DRAWN = "drawn"  # a test region with cells: whether the expert has finished cannot be told from the files
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,9 @@ class RoiStatus:
     drawn: int = 0
     deleted: int = 0
     ok: int = 0
+    # How the OK cells became OK: one at a time (marked, edited or drawn) or with "all in view OK" (Shift+O).
+    ok_hand: int = 0
+    ok_bulk: int = 0
     unreviewed: int = 0
     source: str | None = None  # the slide
     problem: str | None = None  # could not be read (e.g. half synced, or a newer folder format)
@@ -75,10 +78,8 @@ def _status(roi: af.Roi) -> RoiStatus:
         review = af.read_review(roi.folder)  # AnnoCell's review.json (empty if never saved)
     except (OSError, json.JSONDecodeError) as error:
         return RoiStatus(roi.folder, roi.annotator, roi.round, roi.name, NOT_STARTED, problem=str(error))
-    if not review.get("saved_at"):
-        state = NOT_STARTED  # never saved by AnnoCell
-    elif roi.round is None:
-        state = DRAWN if review.get("cells", 0) else NOT_STARTED
+    if not review.get("saved_at") or (roi.round is None and not review.get("cells")):
+        state = NOT_STARTED  # never saved by AnnoCell, or a test region with nothing drawn yet
     else:
         state = COMPLETE if af.is_complete(review) else IN_PROGRESS
     return RoiStatus(
@@ -90,6 +91,8 @@ def _status(roi: af.Roi) -> RoiStatus:
         closed=af.is_closed(record),
         cells=review.get("cells", 0),
         ok=review.get(af.OK, 0),
+        ok_hand=review.get(f"ok_{af.HAND}", 0),
+        ok_bulk=review.get(f"ok_{af.BULK}", 0),
         unreviewed=review.get(af.UNREVIEWED, 0),
         kept=review.get(af.PROPOSED, 0),
         edited=review.get(af.EDITED, 0),
@@ -102,12 +105,15 @@ def _status(roi: af.Roi) -> RoiStatus:
 def corrections(rois: Sequence[RoiStatus]) -> list[dict]:
     """Per round, over its complete training images: how much of the proposal the annotators kept, edited and
     deleted, and how many cells they drew new, as counts and as % of the proposal's cells. If the model improves,
-    the kept share grows from round to round."""
+    the kept share grows from round to round. Also how the cells became OK: by hand or in bulk, and the bulk share
+    of the OK cells (a high one means "kept" says less about the model: those cells were cleared, not looked at
+    one by one)."""
     rows = []
     for number in sorted({r.round for r in rois if r.into_training}):
         done = [r for r in rois if r.round == number and r.into_training]
         counts = {k: sum(getattr(r, k) for r in done) for k in ("kept", "edited", "deleted", "drawn")}
         proposal = counts["kept"] + counts["edited"] + counts["deleted"]
+        hand, bulk = sum(r.ok_hand for r in done), sum(r.ok_bulk for r in done)
         rows.append(
             {
                 "round": number,
@@ -115,6 +121,9 @@ def corrections(rois: Sequence[RoiStatus]) -> list[dict]:
                 "proposal": proposal,
                 **counts,
                 **{f"{k}_%": round(100 * v / proposal, 1) if proposal else None for k, v in counts.items()},
+                "ok_hand": hand,
+                "ok_bulk": bulk,
+                "ok_bulk_%": round(100 * bulk / (hand + bulk), 1) if hand + bulk else None,
             }
         )
     return rows
@@ -151,6 +160,8 @@ def round_summary(rois: Sequence[RoiStatus]) -> list[dict]:
                 "into_training": sum(r.into_training for r in group),
                 "cells": sum(r.cells for r in group),
                 "checked": sum(r.ok for r in group),
+                "ok_hand": sum(r.ok_hand for r in group),
+                "ok_bulk": sum(r.ok_bulk for r in group),
                 "closed": all(r.closed for r in group),
             }
         )
