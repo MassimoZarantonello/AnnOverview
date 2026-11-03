@@ -67,13 +67,16 @@ def _status(roi: af.Roi) -> RoiStatus:
     if version > af.FORMAT_VERSION:  # a newer AnnoCell wrote it: update annocell rather than guess
         problem = f"folder format {version}, this AnnOverview reads up to {af.FORMAT_VERSION}"
         return RoiStatus(roi.folder, roi.annotator, roi.round, roi.name, NOT_STARTED, problem=problem)
-    review = record.get("review") or {}
+    try:
+        review = af.read_review(roi.folder)  # AnnoCell's review.json (empty if never saved)
+    except (OSError, json.JSONDecodeError) as error:
+        return RoiStatus(roi.folder, roi.annotator, roi.round, roi.name, NOT_STARTED, problem=str(error))
     if not review.get("saved_at"):
         state = NOT_STARTED  # never saved by AnnoCell
     elif roi.round is None:
         state = DRAWN if review.get("cells", 0) else NOT_STARTED
     else:
-        state = COMPLETE if af.is_complete(record) else IN_PROGRESS
+        state = COMPLETE if af.is_complete(review) else IN_PROGRESS
     return RoiStatus(
         roi.folder,
         roi.annotator,

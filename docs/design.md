@@ -17,7 +17,7 @@ AnnoLoop is the project's pipeline, started as a copy of macroseg (which stays a
 | Repository | Role | Writes |
 |---|---|---|
 | [AnnoLoop](../../AnnoLoop) | the pipeline: proposes the ROIs, cuts them from the stores, segments them with the model of the round, writes each ROI folder for its annotator, closes a round, trains on the corrections | the ROI folders (`image.tif`, `start_masks.tif`, `annotation.json`) |
-| [AnnoCell](../../AnnoCell) (public) | the annotation tool: the annotator opens an ROI folder, corrects it, the tool saves into the same folder; it does not know about AnnoLoop | `masks.tif`, `cells.csv`, the review in `annotation.json`, the session log |
+| [AnnoCell](../../AnnoCell) (public) | the annotation tool: the annotator opens an ROI folder, corrects it, the tool saves into the same folder; it does not know about AnnoLoop | `masks.tif`, `cells.csv`, `review.json` (the review); never `annotation.json` |
 | AnnOverview (private) | the overview: reads the whole tree | nothing |
 
 There is no live connection between them: they share files on the network drive. The contract is AnnoCell's folder
@@ -71,7 +71,7 @@ An annotator could open an earlier round by mistake and change annotations that 
 
 ### Fields AnnOverview reads
 
-From `annotation.json` of each ROI. Those not in the AnnoCell format today become documented, optional fields of
+From `annotation.json` of each ROI, and AnnoCell's `review.json`. Those not in the AnnoCell format today become documented, optional fields of
 `annocell.folder` (optional, so `format_version` stays 1):
 
 | Field | Written by | Use |
@@ -80,7 +80,7 @@ From `annotation.json` of each ROI. Those not in the AnnoCell format today becom
 | `image`, `source` (slide), `region` (`[y0, y1, x0, x1]` in slide pixels) | AnnoLoop at export | which slide and where; the slide map |
 | `mode` (`train` / `test`), `exported_on` | AnnoLoop at export | test region apart; when assigned |
 | `closed_on` | AnnoLoop when a round ends | closed rounds read-only |
-| `review` (cells, OK, unreviewed, `saved_at`) | AnnoCell at every save | status and last activity |
+| the review, in `review.json` (`annocell.folder.read_review`): cells, OK, unreviewed, OK by hand / in bulk, kept / edited / drawn / deleted, `saved_at`, `started_at`, `completed_at` | AnnoCell at every save | status, last activity, corrections |
 
 A tree walker in `annocell.folder` lists the ROI folders under the root with annotator and round, for AnnoLoop and
 AnnOverview alike.
@@ -89,7 +89,7 @@ AnnOverview alike.
 
 Decided: **no session times**. How long an ROI takes depends too much on the case (and on interruptions) to say
 anything; the model's progress is measured on the masks instead: cells changed (``finish``), the toggled cells (to
-define) and the test regions. AnnoCell only records two moments per ROI, in the review of ``annotation.json``:
+define) and the test regions. AnnoCell only records two moments per ROI, in its review (``review.json``):
 
 - ``started_at``: the first save, which comes with the first change (opening and closing does not start an ROI);
 - ``completed_at``: the save at which no cell was left unreviewed; cleared if a cell is unchecked again.
